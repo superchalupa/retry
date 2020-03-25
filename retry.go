@@ -16,20 +16,30 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-// DoFunc try to execute the function, it only expect that the function will return an error only
-func DoFunc(attempt uint, sleep time.Duration, fn func() error) error {
-
-	if err := fn(); err != nil {
-		if attempt--; attempt > 0 {
-			// Add jitter to prevent Thundering Herd problem (https://en.wikipedia.org/wiki/Thundering_herd_problem)
-			sleep += (time.Duration(rand.Int63n(int64(sleep)))) / 2
-			time.Sleep(sleep)
-			return DoFunc(attempt, 2*sleep, fn)
-		}
-		return err
+// DoFuncBAckoff runs provided func until it returns nil error or attempts exhausted, running the provided backoff strategy function between successive attempts
+func DoFuncBackoff(attempt uint, sleep time.Duration, backoffStrategy func(time.Duration) time.Duration, fn func() error) (err error) {
+	for {
+		err = fn(); 
+    if attempt--; attempt == 0 || err == nil{
+      break
+    }
+    sleep = backoffStrategy(sleep)
 	}
+	return err
+}
 
-	return nil
+// DoFunc try to execute the function, it only expect that the function will return an error only
+// default backoff strategy is exponential 
+func DoFunc(attempt uint, sleep time.Duration, fn func() error) (err error) {
+  backoff := func(sleep time.Duration) time.Duration {
+		// Add jitter to prevent Thundering Herd problem (https://en.wikipedia.org/wiki/Thundering_herd_problem)
+		sleep += (time.Duration(rand.Int63n(int64(sleep)))) / 2
+		time.Sleep(sleep)
+		// multiplicative for next loop
+		return 2*sleep
+  }
+  
+  return DoFuncBackoff(attempt, sleep, backoff, fn)
 }
 
 // Do try to execute the function by its value, function can take variadic arguments and return multiple return.
